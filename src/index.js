@@ -1,10 +1,3 @@
-// NOTE: The intention is to make this file a separate open-source packaage (hence the hyphenated file name).
-// But since functional testing is still in beta, it's likely we'll be changing the interface often
-// initially. This would cause a lot of friction if this was in a separate repo that would have to
-// released each time we wanted to make a change. So for now, we're keeping it within core-js,
-// but try to use it as if it were a separate package.
-
-
 const POLL_INTERVAL = 50;
 const DEFAULT_WAIT_TIMEOUT = 500;
 
@@ -261,8 +254,7 @@ export default class EnzymeFetchMock {
             this._component.update();
 
             return this.find(selector).exists();
-        })
-        .catch((ex) => {
+        }).catch(() => {
             throw new Error(`Timeout waiting for ${selector}. It was never found.`);
         });
     }
@@ -287,15 +279,6 @@ export default class EnzymeFetchMock {
         // If no resolution, the predicate will be tested after every following
         // promise that is added to _holdingPromises resolves.
         return new Promise((resolve) => {
-            const _resolve = (value) => {
-                // to be safe we should tell enzyme to re-render its render tree from React
-                // before resolving to ensure UI is all up-to-date
-                // See: http://airbnb.io/enzyme/docs/guides/migration-from-2-to-3.html#for-mount-updates-are-sometimes-required-when-they-werent-before
-                this._component.update();
-
-                resolve(value);
-            };
-
             // test if predicate already passes
             checkPredicate(this._fetchMock, predicate, resolve);
 
