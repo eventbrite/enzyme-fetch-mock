@@ -15,5 +15,5 @@ deploy:
   skip_cleanup: true
   provider: script
   script: npm publish
-  # on:
-  #   master
+  on:
+    master
