@@ -7,3 +7,13 @@ cache: npm
 script:
   - npm run lint
   - npm run build
+
+before_deploy:
+  - printf "//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n" >> $HOME/.npmrc 2> /dev/null
+
+deploy:
+  skip_cleanup: true
+  provider: script
+  script: npm publish
+  # on:
+  #   master
