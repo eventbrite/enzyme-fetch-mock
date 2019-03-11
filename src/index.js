@@ -4,6 +4,32 @@ const DEFAULT_WAIT_TIMEOUT = 500;
 const isFunction = (object) => typeof object === 'function';
 const isObject = (object) => typeof object === 'object';
 
+export const DATA_SPEC_ATTRIBUTE_NAME = 'data-spec';
+
+/**
+* Finds all instances of components in the rendered `componentWrapper` that are DOM components
+* with the `data-spec` attribute matching `name`.
+* @param {ReactWrapper} componentWrapper            Rendered componentWrapper (result of mount, shallow, or render)
+* @param {string} specName                          Name of `data-spec` attribute value to find
+* @param {string|Function} [typeFilter]             Expected type of the wrappers (defaults to all HTML tags)
+* @returns {ReactComponent[]}                       All matching DOM components
+*/
+const getSpecWrapper = (componentWrapper, specName, typeFilter) => {
+    let specWrappers;
+
+    if (!typeFilter) {
+        specWrappers = componentWrapper.find(`[${DATA_SPEC_ATTRIBUTE_NAME}="${specName}"]`);
+    } else {
+        specWrappers = componentWrapper.findWhere((wrapper) => (
+            // Only call `prop` if a wrapper node exists
+            wrapper.length &&
+            wrapper.prop(DATA_SPEC_ATTRIBUTE_NAME) === specName && wrapper.type() === typeFilter
+        ));
+    }
+
+    return specWrappers;
+};
+
 /**
  * Used to ensure a function is passed to wait functions expecting functions
  * @param  {function} predicate     argument will throw error if it's not a function
@@ -33,12 +59,18 @@ const validateFetchMock = (fetchMock) => {
         throw new Error('EnzymeFetchMock must be passed a fetchMock object on creation');
     }
 
-    // Add catch-all route matcher to the end of fetchMock object so we complain loudly
-    // about the test being leaky and potentially making *real* API calls
-    fetchMock
-        .mock('*', (url, {method}) => {
-            throw new Error(`fetchMock object failed to mock API request: ${url} (${method})`);
-        });
+    if (!fetchMock.routes.some((route) => route.name === '*')) {
+        // Add catch-all route matcher to the end of fetchMock object so we complain loudly
+        // about the test being leaky and potentially making *real* API calls
+        fetchMock
+            .mock('*', (url, {method}) => {
+                throw new Error(`fetchMock object failed to mock API request: ${url} (${method})`);
+            });
+    }
+
+    // ensure wildcard mocks are the last ones evaluated to prevent
+    // other mocks to be ignored
+    fetchMock.routes.sort((a) => a.name === '*' ? 1 : -1);
 };
 
 /**
@@ -193,6 +225,46 @@ export default class EnzymeFetchMock {
     }
 
     /**
+     * Searches the react component for the passed specId, then returns the
+     * enzyme ReactWrapper if found.
+     * ex. find(MyComponent);
+     *
+     * @param  {string} specId specId to search for
+     * @param  {string} parent element in which to apply the search, if different from current wrapped element
+     * @param  {string} typeFilter element type filter to apply
+     * @return {object}          enzyme ReactWrapper
+     */
+    findSpec(specId, parent, typeFilter) {
+        if (typeof specId !== 'string') {
+            throw new Error('Only string specIds are supported.');
+        }
+
+        return getSpecWrapper(parent || this._component, specId, typeFilter);
+    }
+
+    /**
+     * Searches the react component for the passed specId's path expressed as an array,
+     * then returns the nested enzyme ReactWrapper if found.
+     * ex. find(MyComponent);
+     *
+     * @param  {Array} specPath specId to search for
+     * @param  {string} parent element in which to apply the search, if different from current wrapped element
+     * @param  {string} typeFilter element type filter to apply
+     * @return {object}          enzyme ReactWrapper
+     */
+    findSpecPath(specPath, parent, typeFilter) {
+        if (Array.isArray(specPath)) {
+            return specPath.reduce((next, currentSpecId, idx, list) => this.findSpec(
+                currentSpecId,
+                next,
+                (idx === list.length - 1) ? typeFilter : undefined
+            ), parent);
+        }
+
+        throw new Error('Only array specPaths are supported.');
+    }
+
+    /**
      * Returns all fetch calls, optionally filtering by passed API endpoint
      * ex. getApiCalls('/api/v3/events/');
      *
@@ -254,9 +326,32 @@ export default class EnzymeFetchMock {
             this._component.update();
 
             return this.find(selector).exists();
-        }).catch(() => {
-            throw new Error(`Timeout waiting for ${selector}. It was never found.`);
-        });
+        })
+            .catch(() => {
+                throw new Error(`Timeout waiting for ${selector}. It was never found.`);
+            });
+    }
+
+    /**
+     * Resolves a returned promise when the passed spec id is found on the react
+     * component.
+     * Equivalent to .waitFor('[data-spec=specId]'), but with all the extra functionality of
+     * getSpecWrapper()
+     * ex. await waitForSpec('my-spec');
+     *
+     * @param  {string} specId    spec id (data-spec attribute value) to wait for
+     */
+    waitForSpec(specId) {
+        return this.pollFor(() => {
+            // to be safe we should tell enzyme to re-render its render tree from React
+            // See: http://airbnb.io/enzyme/docs/guides/migration-from-2-to-3.html#for-mount-updates-are-sometimes-required-when-they-werent-before
+            this._component.update();
+
+            return getSpecWrapper(this._component, specId).exists();
+        })
+            .catch(() => {
+                throw new Error(`Timeout waiting for spec ${specId}. It was never found.`);
+            });
     }
 
     /**
